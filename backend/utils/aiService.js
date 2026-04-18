@@ -20,8 +20,17 @@ const HF_API_URL = "https://router.huggingface.co/hf-inference/models/linkanjara
  * @param {string} imageUrl - Cloudinary URL of the crop image
  * @returns {Object} { disease, confidence, severity, treatment, isMock }
  */
-export async function analyzeImage(imageUrl) {
-    // Priority 1: Plant.id API
+export async function analyzeImage(imageUrl, cropType = "unknown") {
+    // Priority 1: Local Python ML Agent (Port 8000)
+    try {
+        return await analyzeWithPythonAgent(imageUrl, cropType);
+    } catch (error) {
+        console.error("Python ML Agent error:", error.message);
+        console.log("⚠️ Python ML agent is down or failed. Falling back to Plant.id API...");
+        // Fall through
+    }
+
+    // Priority 2: Plant.id API
     const plantIdKey = process.env.PLANT_ID_API_KEY;
     if (plantIdKey) {
         try {
@@ -32,7 +41,7 @@ export async function analyzeImage(imageUrl) {
         }
     }
 
-    // Priority 2: Hugging Face
+    // Priority 3: Hugging Face
     const hfToken = process.env.HUGGINGFACE_API_TOKEN;
     if (hfToken) {
         try {
@@ -49,7 +58,64 @@ export async function analyzeImage(imageUrl) {
 }
 
 // =============================================
-// PLANT.ID API (Recommended)
+// LOCAL PYTHON ML AGENT (Priority 1)
+// =============================================
+
+async function analyzeWithPythonAgent(imageUrl, cropType) {
+    console.log(`🌿 Calling local Python Agent for crop: ${cropType}...`);
+
+    const response = await fetch("http://127.0.0.1:8000/diagnose", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+            image_url: imageUrl,
+            crop_name: cropType,
+        }),
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Python Agent returned ${response.status}: ${errorText}`);
+    }
+
+    const data = await response.json();
+    
+    // Check if the python agent explicitly failed verifying the crop
+    if (data.is_verified_crop === false) {
+        throw new Error(`Crop verification failed: ${data.message}`);
+    }
+
+    let diseaseName = "Unknown";
+    let confidence = 0;
+
+    // The agent returns disease=None if it's healthy or if it couldn't find a match but saw symptoms
+    if (data.disease) {
+        diseaseName = data.disease.disease_name;
+        confidence = Math.round(data.disease.confidence * 100);
+    } else if (data.diagnosis && data.diagnosis.toLowerCase().includes("healthy")) {
+        diseaseName = "Healthy";
+        confidence = 95;
+    }
+
+    let severity = "low";
+    if (confidence >= 70 && diseaseName !== "Healthy") severity = "high";
+    else if (confidence >= 40 && diseaseName !== "Healthy") severity = "medium";
+
+    // Attach the gemini diagnosis to the response object so the controller can use it
+    return {
+        disease: diseaseName,
+        confidence,
+        severity,
+        provider: "python_agent",
+        agentDiagnosis: data.diagnosis, // The raw text from Gemini
+        isMock: false,
+    };
+}
+
+// =============================================
+// PLANT.ID API (Priority 2)
 // =============================================
 
 async function analyzeWithPlantId(imageUrl, apiKey) {

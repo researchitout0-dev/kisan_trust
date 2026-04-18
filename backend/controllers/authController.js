@@ -83,3 +83,52 @@ export const logout = async (req, res) => {
         return res.status(500).json({ message: "Internal Server Error" });
     }
 };
+
+export const getProfile = async (req, res) => {
+    try {
+        const farmer = await Farmer.findById(req.farmerID).select("-password -__v");
+        if (!farmer) {
+            return res.status(404).json({ message: "Farmer not found" });
+        }
+        res.status(200).json({ farmer });
+    } catch (error) {
+        console.error("Get profile error:", error);
+        res.status(500).json({ message: "Internal Server Error" });
+    }
+};
+
+export const updateProfile = async (req, res) => {
+    try {
+        const { name, village, state, landsize, cropTypes, language } = req.body;
+        
+        // Find existing farmer
+        const farmer = await Farmer.findById(req.farmerID);
+        if (!farmer) {
+            return res.status(404).json({ message: "Farmer not found" });
+        }
+
+        // Update fields if provided
+        if (name) farmer.name = name;
+        if (village) farmer.village = village;
+        if (state) farmer.state = state;
+        if (landsize) farmer.landsize = landsize;
+        if (cropTypes) farmer.cropTypes = cropTypes;
+        if (language) farmer.language = language;
+
+        await farmer.save();
+
+        res.status(200).json({
+            message: "Profile updated successfully",
+            farmer: {
+                id: farmer._id,
+                name: farmer.name,
+                phone: farmer.phone,
+                language: farmer.language,
+                agriTrustScore: farmer.agriTrustScore,
+            }
+        });
+    } catch (error) {
+        console.error("Update profile error:", error);
+        res.status(500).json({ message: "Internal Server Error" });
+    }
+};

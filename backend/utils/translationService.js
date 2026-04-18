@@ -174,6 +174,120 @@ function splitText(text, maxLength) {
 }
 
 /**
+ * Translate all string values in an object recursively.
+ * Skips keys that should not be translated (IDs, URLs, dates, numbers).
+ * 
+ * @param {Object} obj - The object to translate
+ * @param {string} targetLang - Language name ("hindi", "marathi") or code ("hi", "mr")
+ * @returns {Object} New object with all string values translated
+ */
+export async function translateObject(obj, targetLang) {
+    if (!obj || !targetLang) return obj;
+
+    const langCode = LANGUAGE_CODES[targetLang.toLowerCase()] || targetLang.toLowerCase();
+    if (langCode === "en") return obj;
+
+    // Keys to skip (IDs, URLs, dates, technical fields)
+    const skipKeys = new Set([
+        "id", "_id", "imageUrl", "followupDate", "createdAt", "updatedAt",
+        "translationLanguage", "provider", "method", "source",
+        "fieldId", "farmerId", "loanId", "token",
+    ]);
+
+    const translated = {};
+
+    for (const [key, value] of Object.entries(obj)) {
+        if (skipKeys.has(key)) {
+            translated[key] = value;
+        } else if (typeof value === "string" && value.length > 0) {
+            // Skip URLs, dates, hex IDs
+            if (value.startsWith("http") || value.match(/^\d{4}-\d{2}-\d{2}/) || value.match(/^[a-f0-9]{24}$/)) {
+                translated[key] = value;
+            } else {
+                try {
+                    const result = await translateText(value, targetLang);
+                    translated[key] = result.translatedText;
+                } catch {
+                    translated[key] = value;
+                }
+            }
+        } else if (Array.isArray(value)) {
+            translated[key] = await translateArray(value, targetLang);
+        } else if (typeof value === "object" && value !== null) {
+            translated[key] = await translateObject(value, targetLang);
+        } else {
+            translated[key] = value; // numbers, booleans, null
+        }
+    }
+
+    return translated;
+}
+
+/**
+ * Translate all strings in an array.
+ * @param {Array} arr - Array of strings or objects
+ * @param {string} targetLang - Language name or code
+ * @returns {Array} Translated array
+ */
+export async function translateArray(arr, targetLang) {
+    if (!Array.isArray(arr)) return arr;
+
+    const results = [];
+    for (const item of arr) {
+        if (typeof item === "string") {
+            try {
+                const result = await translateText(item, targetLang);
+                results.push(result.translatedText);
+            } catch {
+                results.push(item);
+            }
+        } else if (typeof item === "object" && item !== null) {
+            results.push(await translateObject(item, targetLang));
+        } else {
+            results.push(item);
+        }
+    }
+    return results;
+}
+
+/**
+ * Translate multiple strings in a single batch (more efficient).
+ * Joins all strings with a separator, translates once, then splits back.
+ * 
+ * @param {string[]} texts - Array of strings to translate
+ * @param {string} targetLang - Language name or code
+ * @returns {string[]} Array of translated strings
+ */
+export async function translateBatch(texts, targetLang) {
+    if (!texts || texts.length === 0) return texts;
+
+    const langCode = LANGUAGE_CODES[targetLang.toLowerCase()] || targetLang.toLowerCase();
+    if (langCode === "en") return texts;
+
+    // Use a unique separator that won't appear in normal text
+    const separator = " ||| ";
+    const combined = texts.join(separator);
+
+    try {
+        const result = await translateText(combined, targetLang);
+        const translatedParts = result.translatedText.split(/\s*\|\|\|\s*/);
+        
+        // If splitting didn't work correctly, fall back to individual translations
+        if (translatedParts.length !== texts.length) {
+            const individual = [];
+            for (const text of texts) {
+                const r = await translateText(text, targetLang);
+                individual.push(r.translatedText);
+            }
+            return individual;
+        }
+        return translatedParts;
+    } catch {
+        return texts;
+    }
+}
+
+/**
  * Get list of supported languages.
  */
 export function getSupportedLanguages() {

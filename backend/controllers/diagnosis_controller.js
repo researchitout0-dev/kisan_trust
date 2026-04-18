@@ -6,7 +6,7 @@ import { analyzeImage } from "../utils/aiService.js";
 import { getTreatment } from "../data/treatmentDatabase.js";
 import { calculateScore } from "../utils/scoreService.js";
 import { getWeather } from "../utils/weatherService.js";
-import { translateText } from "../utils/translationService.js";
+import { translateText, translateObject } from "../utils/translationService.js";
 import { sendFollowUpReminder } from "../utils/smsService.js";
 
 const MAX_FIELD_DISTANCE = 100; // meters — reject if farmer is farther than this
@@ -72,8 +72,8 @@ export const createDiagnosis = async (req, res) => {
             });
         }
 
-        // --- Send image to AI for disease detection ---
-        const aiResult = await analyzeImage(imageUrl);
+        // --- Send image and crop type to AI for disease detection ---
+        const aiResult = await analyzeImage(imageUrl, req.body.cropType || field.currentCrop || "unknown");
 
         // --- Get treatment plan ---
         // If Plant.id returned expert treatment → use it directly
@@ -98,7 +98,19 @@ export const createDiagnosis = async (req, res) => {
                 followUpDays: aiResult.severity === "high" ? 5 : 7,
             };
         } else {
+            // Local fallback (or Python Agent fallback)
             treatment = getTreatment(aiResult.disease);
+            
+            // If the Python Agent provided a Gemini morphological diagnosis, append it
+            if (aiResult.agentDiagnosis) {
+                const combinedActions = [
+                    ...treatment.recommendedActions,
+                    "---",
+                    "AI Analysis:",
+                    aiResult.agentDiagnosis
+                ];
+                treatment.recommendedActions = combinedActions;
+            }
         }
 
         // --- Fetch weather data for this location ---
@@ -159,7 +171,8 @@ export const createDiagnosis = async (req, res) => {
         sendFollowUpReminder(farmer.phone, farmer.name, aiResult.disease, followUpDate)
             .catch(err => console.error("SMS reminder error:", err.message));
 
-        return res.status(201).json({
+        // --- Build the response object ---
+        const responseData = {
             message: "Diagnosis created successfully",
             diagnosis: {
                 id: diagnosis._id,
@@ -169,8 +182,6 @@ export const createDiagnosis = async (req, res) => {
                 confidence: diagnosis.confidence,
                 soilCondition: diagnosis.soilCondition,
                 treatmentPlan: diagnosis.treatmentPlan,
-                treatmentPlanTranslated: diagnosis.treatmentPlanTranslated,
-                translationLanguage: diagnosis.translationLanguage,
                 recommendedAction: diagnosis.recommendedAction,
                 followupDate: diagnosis.followupDate,
                 locationVerified: diagnosis.isVerified,
@@ -183,7 +194,27 @@ export const createDiagnosis = async (req, res) => {
                 source: "Treatment recommendations based on ICAR (Indian Council of Agricultural Research) and Krishi Vigyan Kendra published guidelines.",
                 advice: "For critical decisions, always consult your local KVK expert, agricultural officer, or certified agronomist before applying any treatment.",
             },
-        });
+        };
+
+        // --- Translate entire response if farmer prefers non-English language ---
+        // Priority: request body language > farmer's saved language > english
+        const farmerLang = req.body.language || farmer.language || "english";
+        if (farmerLang !== "english") {
+            try {
+                console.log(`🌐 Translating full response to ${farmerLang}...`);
+                responseData.diagnosis = await translateObject(responseData.diagnosis, farmerLang);
+                responseData.disclaimer = await translateObject(responseData.disclaimer, farmerLang);
+                responseData.message = (await translateObject({ text: responseData.message }, farmerLang)).text || responseData.message;
+                responseData.language = farmerLang;
+            } catch (err) {
+                console.error("Translation error (non-blocking):", err.message);
+                responseData.language = "english";
+            }
+        } else {
+            responseData.language = "english";
+        }
+
+        return res.status(201).json(responseData);
 
     } catch (error) {
         console.log(error);
@@ -293,20 +324,21 @@ export const createFollowUp = async (req, res) => {
         }
 
         // --- AI analysis on follow-up image ---
-        const aiResult = await analyzeImage(imageUrl);
+        const aiResult = await analyzeImage(imageUrl, original.cropType || "unknown");
         const treatment = getTreatment(aiResult.disease);
+        
+        if (aiResult.agentDiagnosis) {
+            treatment.recommendedActions = [
+                ...treatment.recommendedActions,
+                "---",
+                "AI Analysis:",
+                aiResult.agentDiagnosis
+            ];
+        }
 
         // --- Fetch weather ---
         const weatherData = await getWeather(location.latitude, location.longitude);
 
-        // --- Translate if needed ---
-        let translatedPlan = null;
-        let translationLang = null;
-        if (farmer.language && farmer.language !== "english") {
-            const translation = await translateText(treatment.treatmentPlan, farmer.language);
-            translatedPlan = translation.translatedText;
-            translationLang = translation.language;
-        }
 
         // --- Calculate growth/improvement score ---
         // Compare severity: if original was high and now low → big improvement
@@ -353,8 +385,6 @@ export const createFollowUp = async (req, res) => {
             severity: treatment.severity,
             confidence: aiResult.confidence,
             treatmentPlan: treatment.treatmentPlan,
-            treatmentPlanTranslated: translatedPlan,
-            translationLanguage: translationLang,
             recommendedAction: treatment.recommendedActions,
             followupDate: followUpDate,
             isFollowup: true,
@@ -373,7 +403,7 @@ export const createFollowUp = async (req, res) => {
         // --- Recalculate farmer score ---
         await calculateScore(farmerID);
 
-        return res.status(201).json({
+        const responseData = {
             message: "Follow-up diagnosis created",
             followUp: {
                 id: followUp._id,
@@ -385,13 +415,27 @@ export const createFollowUp = async (req, res) => {
                 previousSeverity: original.severity,
                 improvement: growthScore >= 50 ? "Improving ✅" : growthScore >= 30 ? "Stable ⚠️" : "Worsening ❌",
                 treatmentPlan: followUp.treatmentPlan,
-                treatmentPlanTranslated: followUp.treatmentPlanTranslated,
-                translationLanguage: followUp.translationLanguage,
                 recommendedAction: followUp.recommendedAction,
                 followupDate: followUp.followupDate,
                 weather: followUp.weather || null,
             },
-        });
+        };
+
+        const farmerLang = req.body.language || farmer.language || "english";
+        if (farmerLang !== "english") {
+            try {
+                responseData.followUp = await translateObject(responseData.followUp, farmerLang);
+                responseData.message = (await translateObject({ text: responseData.message }, farmerLang)).text || responseData.message;
+                responseData.language = farmerLang;
+            } catch (err) {
+                console.error("Translation error:", err.message);
+                responseData.language = "english";
+            }
+        } else {
+            responseData.language = "english";
+        }
+
+        return res.status(201).json(responseData);
 
     } catch (error) {
         console.log(error);
