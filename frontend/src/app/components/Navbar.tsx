@@ -1,4 +1,4 @@
-import { Link } from "react-router";
+import { Link, NavLink } from "react-router";
 import { Leaf, Sun, Moon } from "lucide-react";
 import { useTheme } from "../contexts/ThemeContext";
 
@@ -16,10 +16,31 @@ export default function Navbar() {
           </span>
         </Link>
 
-        <div className={`hidden md:flex items-center gap-8 text-[15px] font-medium z-10 transition-colors duration-500 ${isDarkTheme ? "text-white/70" : "text-[#1A3A1A]/70"}`}>
-          <Link to="/how-it-works" className={`${isDarkTheme ? "hover:text-white" : "hover:text-[#1A3A1A]"} transition-colors`}>How it Works</Link>
-          <Link to="/for-farmers" className={`${isDarkTheme ? "hover:text-white" : "hover:text-[#1A3A1A]"} transition-colors`}>For Farmers</Link>
-          <Link to="/for-lenders" className={`${isDarkTheme ? "hover:text-white" : "hover:text-[#1A3A1A]"} transition-colors`}>For Lenders</Link>
+        <div className="hidden md:flex items-center gap-8 text-[15px] font-medium z-10">
+          <NavLink 
+            to="/how-it-works" 
+            className={({ isActive }) => 
+              `${isActive ? "text-[#64B43C] font-bold" : (isDarkTheme ? "text-white/70 hover:text-white" : "text-[#1A3A1A]/70 hover:text-[#1A3A1A]")} transition-all duration-300`
+            }
+          >
+            How it Works
+          </NavLink>
+          <NavLink 
+            to="/for-farmers" 
+            className={({ isActive }) => 
+              `${isActive ? "text-[#64B43C] font-bold" : (isDarkTheme ? "text-white/70 hover:text-white" : "text-[#1A3A1A]/70 hover:text-[#1A3A1A]")} transition-all duration-300`
+            }
+          >
+            For Farmers
+          </NavLink>
+          <NavLink 
+            to="/for-lenders" 
+            className={({ isActive }) => 
+              `${isActive ? "text-[#64B43C] font-bold" : (isDarkTheme ? "text-white/70 hover:text-white" : "text-[#1A3A1A]/70 hover:text-[#1A3A1A]")} transition-all duration-300`
+            }
+          >
+            For Lenders
+          </NavLink>
         </div>
 
         <div className="flex items-center gap-2 z-10">
