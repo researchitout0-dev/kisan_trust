@@ -64,7 +64,8 @@ export async function analyzeImage(imageUrl, cropType = "unknown") {
 async function analyzeWithPythonAgent(imageUrl, cropType) {
     console.log(`🌿 Calling local Python Agent for crop: ${cropType}...`);
 
-    const response = await fetch("diseasedetector-production.up.railway.app", {
+    const agentUrl = process.env.AI_SERVICE_URL || "http://localhost:8000";
+    const response = await fetch(`${agentUrl}/diagnose`, {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
@@ -82,9 +83,13 @@ async function analyzeWithPythonAgent(imageUrl, cropType) {
 
     const data = await response.json();
     
-    // Check if the python agent explicitly failed verifying the crop
+    // If crop verification failed but we still got a diagnosis, use it anyway
     if (data.is_verified_crop === false) {
-        throw new Error(`Crop verification failed: ${data.message}`);
+        if (data.diagnosis) {
+            console.log(`⚠️ Crop verification soft-fail (score: ${data.similarity_score}), but diagnosis available — using it.`);
+        } else {
+            throw new Error(`Crop verification failed: ${data.message}`);
+        }
     }
 
     let diseaseName = "Unknown";
@@ -143,8 +148,9 @@ async function analyzeWithPlantId(imageUrl, apiKey) {
 
     const data = await response.json();
     
-    // Debug: log raw response structure
-    console.log("🔍 Crop Health raw response:", JSON.stringify(data, null, 2));
+    // Debug: log summary only (not the full response)
+    const topDisease = data.result?.disease?.suggestions?.[0];
+    console.log(`🔍 Crop Health result: ${topDisease?.name || "unknown"} (${Math.round((topDisease?.probability || 0) * 100)}% confidence)`);
     
     return parsePlantIdResponse(data);
 }

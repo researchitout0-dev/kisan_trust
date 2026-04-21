@@ -27,10 +27,21 @@ def get_healthy_image_urls(crop_name: str, max_images: int = 5) -> list[str]:
     """
     _configure()
 
-    # Folder path on Cloudinary — images sit directly inside e.g. "cotton/"
+    # Folder path on Cloudinary — images sit in asset_folder e.g. "cotton"
     folder = crop_name.lower().strip()
 
     try:
+        # Try asset_folder search first (new Cloudinary DAM mode)
+        result = cloudinary.api.resources_by_asset_folder(
+            folder,
+            max_results=max_images,
+            resource_type="image",
+        )
+        urls = [r["secure_url"] for r in result.get("resources", [])]
+        if urls:
+            return urls
+
+        # Fallback to prefix-based search (legacy mode)
         result = cloudinary.api.resources(
             type="upload",
             prefix=f"{folder}/",

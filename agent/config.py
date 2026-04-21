@@ -5,7 +5,7 @@ Centralized configuration — loads .env and exposes all settings.
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 
 
 class Settings:
@@ -19,6 +19,7 @@ class Settings:
 
     # MySQL
     DB_HOST: str = os.getenv("DB_HOST", "localhost")
+    DB_PORT: int = int(os.getenv("DB_PORT", "3306"))
     DB_USER: str = os.getenv("DB_USER", "root")
     DB_PASSWORD: str = os.getenv("DB_PASSWORD", "")
     DB_NAME: str = os.getenv("DB_NAME", "crop_diseases")
@@ -27,7 +28,7 @@ class Settings:
     PORT: int = int(os.getenv("PORT", "8000"))
 
     # Crop verification
-    CLIP_SIMILARITY_THRESHOLD: float = 0.75
+    CLIP_SIMILARITY_THRESHOLD: float = 0.30
 
     # Supported crops (folder names on Cloudinary)
     SUPPORTED_CROPS: list[str] = [
@@ -37,7 +38,8 @@ class Settings:
         "pineapple", "pomegranate", "sapota", "apple",
         "pear", "peach", "plum", "jackfruit", "coconut",
         "cashew", "amla", "strawberry", "litchi", "jujube",
-        "date_palm", "fig",
+        "date_palm", "fig", "vegetables", "potato", "onion",
+        "sugarcane", "soybean", "groundnut", "chilli", "pepper",
     ]
 
 

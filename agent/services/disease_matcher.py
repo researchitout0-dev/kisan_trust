@@ -15,6 +15,7 @@ def _get_connection():
     """Create a fresh MySQL connection."""
     return mysql.connector.connect(
         host=settings.DB_HOST,
+        port=settings.DB_PORT,
         user=settings.DB_USER,
         password=settings.DB_PASSWORD,
         database=settings.DB_NAME,

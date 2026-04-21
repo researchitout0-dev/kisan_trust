@@ -79,22 +79,24 @@ async def diagnose(req: DiagnoseRequest):
 
     healthy_urls = get_healthy_image_urls(crop)
     if not healthy_urls:
-        raise HTTPException(
-            status_code=404,
-            detail=f"No healthy reference images found for crop '{crop}' on Cloudinary.",
-        )
-    print(f"[pipeline] Found {len(healthy_urls)} healthy reference image(s)")
+        print(f"[pipeline] No healthy references found — using single-image diagnosis mode")
+        # Skip CLIP verification, go straight to Gemini with just the uploaded image
+        is_verified = True
+        similarity_score = 1.0
+        best_healthy_url = None
+    else:
+        print(f"[pipeline] Found {len(healthy_urls)} healthy reference image(s)")
 
-    # ------------------------------------------------------------------
-    # Step 2 — Verify crop identity via CLIP
-    # ------------------------------------------------------------------
-    print("[pipeline] Step 2: Verifying crop identity with CLIP …")
-    is_verified, similarity_score, best_healthy_url = verify_crop(
-        uploaded_url=req.image_url,
-        healthy_urls=healthy_urls,
-        threshold=settings.CLIP_SIMILARITY_THRESHOLD,
-    )
-    print(f"[pipeline] Crop verified: {is_verified}  (similarity={similarity_score:.4f})")
+        # ------------------------------------------------------------------
+        # Step 2 — Verify crop identity via CLIP
+        # ------------------------------------------------------------------
+        print("[pipeline] Step 2: Verifying crop identity with CLIP …")
+        is_verified, similarity_score, best_healthy_url = verify_crop(
+            uploaded_url=req.image_url,
+            healthy_urls=healthy_urls,
+            threshold=settings.CLIP_SIMILARITY_THRESHOLD,
+        )
+        print(f"[pipeline] Crop verified: {is_verified}  (similarity={similarity_score:.4f})")
 
     if not is_verified:
         return DiagnoseResponse(
