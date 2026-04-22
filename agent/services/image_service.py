@@ -16,13 +16,23 @@ Supported crops: {crop_list}
 Reply with ONLY a JSON object, no extra text:
 {{"is_crop": true, "crop_type": "wheat", "confidence": 0.92}}"""
     
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=[
-            types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"),
-            types.Part.from_text(text=prompt),
-        ]
-    )
+    contents = [
+        types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"),
+        types.Part.from_text(text=prompt),
+    ]
+
+    for attempt in range(3):
+        try:
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=contents,
+            )
+            break
+        except Exception as e:
+            if "503" in str(e) and attempt < 2:
+                time.sleep(2 ** (attempt + 1))
+            else:
+                raise
     
     text = response.text.strip()
     match = re.search(r'\{.*\}', text, re.DOTALL)
