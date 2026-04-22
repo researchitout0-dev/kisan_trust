@@ -29,6 +29,7 @@ app = FastAPI(
     title="KisanTrust Disease Detection",
     description="Crop disease detection via image comparison, AI diagnosis, and symptom embedding matching.",
     version="1.0.0",
+  redirect_slashes=False
 )
 
 app.add_middleware(
